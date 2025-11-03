@@ -1,0 +1,68 @@
+const fs = require('fs').promises;
+const path = require('path');
+const os = require('os');
+
+const { readHealthJson, countHealthEntries } = require('./healthReader');
+
+describe('healthReader', () => {
+  let tmpDir;
+  beforeAll(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'healthreader-'));
+  });
+
+  afterAll(async () => {
+    // cleanup
+    try {
+      const files = await fs.readdir(tmpDir);
+      await Promise.all(files.map((f) => fs.unlink(path.join(tmpDir, f))));
+      await fs.rmdir(tmpDir);
+    } catch (e) {
+      // ignore
+    }
+  });
+
+  test('readHealthJson reads and parses valid JSON', async () => {
+    const file = path.join(tmpDir, 'good.json');
+    const payload = [{ date: '2025-11-01', steps: 1000 }];
+    await fs.writeFile(file, JSON.stringify(payload), 'utf8');
+
+    const parsed = await readHealthJson(file);
+    expect(Array.isArray(parsed)).toBe(true);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].steps).toBe(1000);
+  });
+
+  test('readHealthJson throws for invalid JSON', async () => {
+    const file = path.join(tmpDir, 'bad.json');
+    await fs.writeFile(file, '{ not: valid json }', 'utf8');
+
+    await expect(readHealthJson(file)).rejects.toThrow(/Failed to parse JSON/);
+  });
+
+  test('countHealthEntries returns length for array JSON', async () => {
+    const file = path.join(tmpDir, 'arr.json');
+    const payload = [{}, {}, {}];
+    await fs.writeFile(file, JSON.stringify(payload), 'utf8');
+
+    const count = await countHealthEntries(file);
+    expect(count).toBe(3);
+  });
+
+  test('countHealthEntries returns 0 for non-array JSON without arrays', async () => {
+    const file = path.join(tmpDir, 'obj.json');
+    const payload = { meta: 'info', date: '2025-11-01' };
+    await fs.writeFile(file, JSON.stringify(payload), 'utf8');
+
+    const count = await countHealthEntries(file);
+    expect(count).toBe(0);
+  });
+
+  test('countHealthEntries detects array nested in object', async () => {
+    const file = path.join(tmpDir, 'wrapped.json');
+    const payload = { entries: [{}, {}] };
+    await fs.writeFile(file, JSON.stringify(payload), 'utf8');
+
+    const count = await countHealthEntries(file);
+    expect(count).toBe(2);
+  });
+});
