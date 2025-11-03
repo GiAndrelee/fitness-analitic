@@ -1,0 +1,59 @@
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const { readWorkoutCsv, countWorkouts, totalWorkoutMinutes } = require('./workoutReader');
+
+describe('workoutReader', () => {
+  let tmpDir;
+  beforeAll(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'workoutreader-'));
+  });
+
+  afterAll(() => {
+    try {
+      const files = fs.readdirSync(tmpDir);
+      for (const f of files) {
+        fs.unlinkSync(path.join(tmpDir, f));
+      }
+      fs.rmdirSync(tmpDir);
+    } catch (e) {
+      // ignore
+    }
+  });
+
+  test('readWorkoutCsv parses CSV into rows', async () => {
+    const file = path.join(tmpDir, 'workouts.csv');
+    const csv = 'date,type,minutes\n2025-11-01,run,30\n2025-11-02,swim,45\n';
+    fs.writeFileSync(file, csv, 'utf8');
+
+    const rows = await readWorkoutCsv(file);
+    expect(Array.isArray(rows)).toBe(true);
+    expect(rows.length).toBe(2);
+    expect(rows[0].date).toBe('2025-11-01');
+    expect(rows[0].type).toBe('run');
+    expect(rows[0].minutes).toBe('30'); // csv-parser yields strings
+  });
+
+  test('countWorkouts returns correct count', async () => {
+    const file = path.join(tmpDir, 'workouts2.csv');
+    const csv = 'date,type,minutes\n2025-11-01,run,30\n';
+    fs.writeFileSync(file, csv, 'utf8');
+
+    const count = await countWorkouts(file);
+    expect(count).toBe(1);
+  });
+
+  test('totalWorkoutMinutes sums numeric minutes and ignores invalid', async () => {
+    const file = path.join(tmpDir, 'workouts3.csv');
+    const csv = 'date,type,minutes\n2025-11-01,run,30\n2025-11-02,yoga,not-a-number\n2025-11-03,cycle,20\n';
+    fs.writeFileSync(file, csv, 'utf8');
+
+    const total = await totalWorkoutMinutes(file);
+    expect(total).toBe(50); // 30 + 0 + 20
+  });
+
+  test('readWorkoutCsv rejects on missing file', async () => {
+    const missing = path.join(tmpDir, 'nosuch.csv');
+    await expect(readWorkoutCsv(missing)).rejects.toThrow(/Failed to open CSV file/);
+  });
+});
